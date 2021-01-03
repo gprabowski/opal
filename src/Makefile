@@ -2,7 +2,7 @@ CXX = g++
 # -march=native will compile for correct simd
 CXXFLAGS = -std=c++11 -march=native -Wall
 
-DEBUG ?= 0
+DEBUG ?= 1
 ifeq ($(DEBUG), 1)
 	CXXFLAGS += -g -fno-omit-frame-pointer
 else

@@ -1,4 +1,6 @@
 #include <unistd.h>
+#include <fstream>
+#include <iostream>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -27,10 +29,11 @@ int main(int argc, char * const argv[]) {
     bool scoreMatrixFileGiven = false;
     char scoreMatrixFilepath[512];
     bool silent = false;
+	bool allVsAll = false;
     char mode[16] = "SW";
     int searchType = OPAL_SEARCH_SCORE;
     int option;
-    while ((option = getopt(argc, argv, "a:o:e:m:f:x:s")) >= 0) {
+    while ((option = getopt(argc, argv, "a:o:e:m:f:x:s:v")) >= 0) {
         switch (option) {
         case 'a': strcpy(mode, optarg); break;
         case 'o': gapOpen = atoi(optarg); break;
@@ -39,6 +42,7 @@ int main(int argc, char * const argv[]) {
         case 'f': scoreMatrixFileGiven = true; strcpy(scoreMatrixFilepath, optarg); break;
         case 's': silent = true; break;
         case 'x': searchType = atoi(optarg); break;
+		case 'v': allVsAll = true; break;	
         }
     }
     if (optind + 2 != argc) {
@@ -147,46 +151,41 @@ int main(int argc, char * const argv[]) {
         }
 
         // ----------------------------- MAIN CALCULATION ----------------------------- //
-        OpalSearchResult** results = new OpalSearchResult*[dbLength];
-        for (int i = 0; i < dbLength; i++) {
+        OpalSearchResult** results = new OpalSearchResult*[dbLength * dbLength];
+        for (int i = 0; i < dbLength * dbLength; i++) {
             results[i] = new OpalSearchResult;
             opalInitSearchResult(results[i]);
         }
         printf("\nComparing query to database...");
         fflush(stdout);
         clock_t start = clock();
-        int resultCode = opalSearchDatabase(query, queryLength, db, dbLength, dbSeqLengths,
-                                             gapOpen, gapExt, scoreMatrix.getMatrix(), alphabetLength,
-                                             results, searchType, modeCode, OPAL_OVERFLOW_BUCKETS);
-        if (resultCode) {
-            printf("\nDatabase search failed with error code: %d\n", resultCode);
-        }
+		int i = 0;
+		std::cout << "gap open is " << gapOpen << "and gap extend is " << gapExt << std::endl;
+		for(auto &query : (*querySequences)) {
+				int resultCode = opalSearchDatabase(query.data(), query.size(), db, dbLength, dbSeqLengths,
+													 gapOpen, gapExt, scoreMatrix.getMatrix(), alphabetLength,
+													 results + dbLength * i++, searchType, modeCode, OPAL_OVERFLOW_BUCKETS);
+				if (resultCode) {
+					printf("\nDatabase search failed with error code: %d\n", resultCode);
+				}
+		}
         clock_t finish = clock();
         cpuTime += ((double)(finish-start))/CLOCKS_PER_SEC;
         // ---------------------------------------------------------------------------- //
         printf("\nFinished!\n");
-
+		std::ofstream ofs("avsa_results.txt", std::ofstream::out);
         if (!silent) {
             printf("\n#<i>: <score> (<query start>, <target start>) (<query end>, <target end>)\n");
-            for (int i = 0; i < dbLength; i++) {
+            for (int i = 0; i < dbLength * dbLength; i++) {
+				ofs << results[i]->score << ";" << std::flush;
+				if(i % dbLength == dbLength - 1) ofs << std::endl;
                 printf("#%d: %d", dbTotalLength - dbLength + i, results[i]->score);
-                if (results[i]->startLocationQuery >= 0) {
-                    printf(" (%d, %d)", results[i]->startLocationQuery, results[i]->startLocationTarget);
-                } else {
-                    printf(" (?, ?)");
-                }
-                if (results[i]->endLocationQuery >= 0) {
-                    printf(" (%d, %d)", results[i]->endLocationQuery, results[i]->endLocationTarget);
-                } else {
-                    printf(" (?, ?)");
-                }
-                printf("\n");
-
                 if (results[i]->alignment) {
                     printAlignment(query, queryLength, db[i], dbSeqLengths[i], *results[i], alphabet);
                 }
             }
         }
+		ofs.close();
 
         for (int i = 0; i < dbLength; i++) {
             if (results[i]->alignment) {
